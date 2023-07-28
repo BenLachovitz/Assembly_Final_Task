@@ -1,0 +1,279 @@
+# Title: Targil 6       Filename: Targil6
+# Author: Ben Lachovitz    ID: 206480774   	Date: 18/05/2022
+# Description: We have menu and the user can select what he want to do from the menu
+################# Data segment #####################
+.data
+jump_table:   .word  print,print,change_number,negate,swap,find_max,find_max
+menu:
+.ascii "\n The options are:\n"
+.ascii "1	Print matrix unsigned\n"
+.ascii "2	Print matrix signed\n"
+.ascii "3	Change number\n"
+.ascii "4	Negate a number in the matrix\n"
+.ascii "5	Swap numbers in the matrix\n"
+.ascii "6	Find the max sum of a row (unsign)\n"
+.ascii "7       Find the max sum of a row (sign)\n"
+.asciiz "8       END\n"
+
+
+msg1: .asciiz "\n ************ case "
+msg2: .asciiz " *************** \n"
+msg3: .asciiz "\n Bye Bye\n"
+Error: .asciiz "\n The number selected is not in range of the menu\n"
+number_invalid: .asciiz "\n you entered number that out of matrix range\n"
+space: .asciiz " "
+rowDown: .asciiz "\n"
+row_number: .asciiz "\n Please enter the number of the row you want: "
+column_number: .asciiz "\n Please enter the number of the column you want: "
+get_number: .asciiz "\n Please enter the new number: "
+incorrect_number_range: "\n The number you entered must be between 255 to -255\n"
+matrix: .byte 2,7,34,68,56,89,156,122,135,0,33,122,122,66,18,255
+
+################# Code segment #####################
+.text
+.globl main
+Wrong:
+	li $v0,4
+	la $a0,Error
+	syscall	
+	j main
+Number_error:
+	li $v0,4
+	la $a0,incorrect_number_range
+	syscall	
+main:	# main program entry
+
+
+#print menu
+	li $v0,4
+	la $a0,menu
+	syscall
+	
+	li $v0,5  #get number for the menu
+	syscall
+	bgt $v0,8, Wrong
+	blt $v0,1 ,Wrong
+	beq $v0,8,exit
+	move $a1,$v0 #$a1 The number selected from the menu  between 1-6
+	li $v0,4
+	la $a0,msg1
+	syscall
+	sll $s0,$a1,2 #the case address is in word
+	addi $s0,$s0,-4 #Start from zero
+	la   $s1,jump_table #$s0=jump table address
+	add  $s0,$s1,$s0 #the address of the selected case 
+	lw  $s2,0($s0)
+	la $a3,matrix
+	jalr  $s2	
+	li $v0,4
+	la $a0,msg2
+	syscall
+	j  main
+
+print:	
+	move $a0,$a1
+	li $v0,1
+	syscall
+	li $v0,4
+	la $a0,rowDown #msg print
+	syscall
+	addiu $sp,$sp,-4 
+	sw $ra,0($sp) #backup last $ra address
+	li $t6,4 #column loop counter
+	li $t7,4 #row loop counter
+loop:
+	jal print_num
+	addi $a3,$a3,1 #matrix address +1
+	la $a0,space #print space between numbers
+	li $v0,4
+	syscall
+	addi $t6,$t6,-1
+	bne $t6,0,loop
+	li $t6,4
+	la $a0,rowDown #print new line 
+	syscall
+	addi $t7,$t7,-1
+	bne $t7,0,loop
+	lw $ra,0($sp) #take the backedup $ra address
+	addiu $sp,$sp,4
+	jr $ra
+	
+change_number:
+	addiu $sp,$sp,-4
+	sw $ra,0($sp)
+	move $a0,$a1
+	li $v0,1
+	syscall
+	jal get_position
+	move $t2,$v0
+	li $v0,4
+	la $a0,get_number 
+	syscall
+	li $v0,5
+	syscall
+	bgt $v0,255,Number_error #checking if the number can enter in 1 byte
+	blt $v0,-255,Number_error
+	add $a3,$a3,$t2 #calculate the address of the number to change from get position
+	sb $v0,0($a3)
+	lw $ra,0($sp)
+	addiu $sp,$sp,4
+	jr $ra
+	
+negate:
+	addiu $sp,$sp,-4
+	sw $ra,0($sp)
+	move $a0,$a1
+	li $v0,1
+	syscall
+	jal get_position
+	add $a3,$a3,$v0
+	lb $t3,0($a3)
+	xori $t3,$t3,0xffffffff #make the negate of the number with mask
+	addi $t3,$t3,1 #adding 1 for 2s' complements
+	sb $t3,0($a3)
+	lw $ra,0($sp)
+	addiu $sp,$sp,4
+	jr $ra
+	
+swap:
+	move $a0,$a1
+	li $v0,1
+	syscall
+	addiu $sp,$sp,-4
+	sw $ra,0($sp)
+	jal get_position
+	add $t5,$a3,$v0 #calculate the first address
+	lb $t6,0($t5) #take the first number
+	jal get_position
+	add $t7,$a3,$v0 #calculate the second address
+	lb $t8,0($t7) #take the second number
+	sb $t8,0($t5)
+	sb $t6,0($t7)
+	lw $ra,0($sp)
+	addiu $sp,$sp,4
+	jr $ra
+	
+find_max:
+	addiu $sp,$sp,-4
+	sw $ra,0($sp)
+	move $a0,$a1
+	li $v0,1
+	syscall
+	li $v0,11
+	li $a0,'\n'
+	syscall
+	addi $a1,$a1,-5 #to get 1 or 2 to know if unsigned or signed
+	move $a2,$a3 #working on temp matrix address
+	li $t4,0 #sum
+	li $t8,0 #sum temp
+	li $t5,0 #row index save
+	li $t6,0 #col counter
+	li $t7,0 #row counter
+loop_max:
+	beq $a1,2,signed_sum #check if calculate by sign of not
+	lbu $t3,0($a2) #load number unsigned
+	j continue
+signed_sum:
+	lb $t3,0($a2) #load number signed
+continue:
+	addi $a2,$a2,1
+	add $t8,$t8,$t3 #sum the row numbers
+	addi $t6,$t6,1 #column count +1
+	bne $t6,4,loop_max
+	li $t6,0 #reset the counter
+	addi $t7,$t7,1 #row counter +1
+	bgt $t8,$t4,change_index #check if the temp sum bigger then the final sum
+	j end_loop
+change_index:
+	move $t5,$t7 #save the row index for the corrunt max row
+	move $t4,$t8 #save the temp sum into final sum
+end_loop:
+	li $t8,0 #reset the temp sum
+	bne $t7,4,loop_max
+	addi $t5,$t5,-1 #to get the real row index (0-3)
+	sll $t5,$t5,2 #row mult 4
+	add $a3,$a3,$t5 #calculate the address by the row
+print_row:
+	jal print_num
+	addi $a3,$a3,1
+	li $a0,0x20 #space between numbers
+	syscall
+	addi $t6,$t6,1
+	bne $t6,4,print_row
+	lw $ra,0($sp)
+	addiu $sp,$sp,4
+	jr $ra
+
+exit:
+	li $v0,4
+	la $a0,msg3
+	syscall
+
+	li $v0, 10	# Exit program
+	syscall
+
+print_num:
+	li $v0,11
+	beq $a1,2,signed #check if the user want to print signed numbers or unsigned
+	lbu $t3,0($a3) #load unsigned
+	j next
+signed:
+	lb $t3,0($a3) #load signed
+	andi $t8,$t3,0x10000000 #take the sign bit
+	li $a0,0x20 #load space
+	beq $t8,0,sign_print #check if the sign bit is 0 for positive or 1 for negative
+	li $a0,0x2d #load minus char for negative numbers
+	xori $t3,$t3,0xffffffff 
+	addi $t3,$t3,1 #2s' complements calculate 
+sign_print:
+	syscall #print the space or the minus
+next:
+	div $t2,$t3,100 #to get the houndred number
+	add $a0,$t2,0x30 #take the houndred number + the 0 char hexa to get the number
+	syscall
+	mfhi $t2 #take the rest of the number
+	div $t2,$t2,10 #to get the dozen number
+	add $a0,$t2,0x30 #take the dozen number + the 0 char hexa to get the number
+	syscall
+	mfhi $t2 #take the units 
+	add $a0,$t2,0x30 #take the unit number + the 0 char hexa to get the number
+	syscall 
+	jr $ra
+	
+get_position:
+	li $v0,4
+get_row:
+	la $a0,row_number
+	syscall
+	li $v0,5
+	syscall
+	bgt $v0,4,invalid_row #check if the number is out of index
+	blt $v0,1,invalid_row
+	move $t2,$v0 #backing up the number from the user
+	j get_column
+invalid_row: 
+	li $v0,4 #error msg
+	la $a0,number_invalid
+	syscall	
+	j get_row
+get_column:
+	li $v0,4
+	la $a0,column_number
+	syscall
+	li $v0,5
+	syscall
+	bgt $v0,4,invalid_column #check if the number is out of index
+	blt $v0,1,invalid_column
+	move $t3,$v0 #backing up the number from the user
+	j all_good
+invalid_column:
+	li $v0,4 #error msg
+	la $a0,number_invalid
+	syscall	
+	j get_column
+all_good:
+	addi $t2,$t2,-1
+	sll $t2,$t2,2 #to get the actual number of the row
+	addi $t3,$t3,-1 #to get the actual number of the column
+	add $v0,$t2,$t3 #calculate the global index of the number in the array
+	jr $ra
